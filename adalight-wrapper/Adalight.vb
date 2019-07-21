@@ -9,7 +9,27 @@ Public Class Adalight : Implements IDisposable
     Private serialData As Byte()
     Private Const magicWord As String = "Ada"
 
-    Public Sub New(ByVal COMPort As String, ByVal LEDCount As Integer)
+    Private _COMPort As String
+    Public Property COMPort As String
+        Set(value As String)
+            _COMPort = value
+        End Set
+        Get
+            Return _COMPort
+        End Get
+    End Property
+
+    ''' <summary>
+    ''' Initialze Instance
+    ''' </summary>
+    ''' <param name="Port">COM Port as String, e.g. "COM3"</param>
+    ''' <param name="LEDCount">Total Count of LEDs on your Stripe</param>
+    Public Sub New(ByVal Port As String, ByVal LEDCount As Integer)
+        'Set Properties
+        LEDS = LEDCount
+        _COMPort = Port
+
+        'Create connection object
         COMConn = New SerialPort With {
             .PortName = COMPort,
             .BaudRate = 115200,
@@ -18,16 +38,20 @@ Public Class Adalight : Implements IDisposable
             .StopBits = StopBits.One
             }
 
-        LEDS = LEDCount
-
+        'Create Matrix Array
         LEDMatrix = New ArrayList
         For i = 0 To LEDCount - 1
             LEDMatrix.Add({0, 0, 0})
         Next
 
-        ReDim serialData(6 + (LEDS * 3)) 'Change ByteArray length on runtime
+        'Redefine ByteArray length on runtime of current LED count
+        ReDim serialData(6 + (LEDS * 3))
     End Sub
 
+    ''' <summary>
+    ''' Tries to open connection
+    ''' </summary>
+    ''' <returns>Boolean value</returns>
     Public Function OpenConn() As String
         Try
             COMConn.Open()
@@ -37,6 +61,10 @@ Public Class Adalight : Implements IDisposable
         End Try
     End Function
 
+    ''' <summary>
+    ''' Tries to close connection
+    ''' </summary>
+    ''' <returns>Boolean value</returns>
     Public Function CloseConn() As Boolean
         Try
             COMConn.Close()
@@ -46,12 +74,13 @@ Public Class Adalight : Implements IDisposable
         End Try
     End Function
 
+#Region "Helper routines"
     Private Sub WriteHeader()
-        serialData(0) = Convert.ToByte(magicWord(0))
+        serialData(0) = Convert.ToByte(magicWord(0)) 'MagicWord
         serialData(1) = Convert.ToByte(magicWord(1))
         serialData(2) = Convert.ToByte(magicWord(2))
-        serialData(3) = CByte((LEDS - 1) >> 8)
-        serialData(4) = CByte(((LEDS - 1) And &HFF))
+        serialData(3) = CByte((LEDS - 1) >> 8) 'LED count high byte
+        serialData(4) = CByte(((LEDS - 1) And &HFF)) 'LED count low byte
         serialData(5) = CByte(serialData(3) Xor serialData(4) Xor &H55) 'Checksum
     End Sub
 
@@ -67,6 +96,40 @@ Public Class Adalight : Implements IDisposable
         Next
     End Sub
 
+    ''' <summary>
+    ''' Helper Function
+    ''' Returns a list of devices responded with the correct Adalight magicword
+    ''' </summary>
+    ''' <returns></returns>
+    Public Shared Function GetAdalightDevices() As List(Of String)
+        Dim output As List(Of String) = New List(Of String)
+
+        For Each dev In SerialPort.GetPortNames()
+            Try
+                Dim i As SerialPort = New SerialPort With {
+                    .PortName = dev,
+                    .BaudRate = 115200,
+                    .Parity = Parity.None,
+                    .DataBits = 8,
+                    .StopBits = StopBits.One,
+                    .ReadTimeout = 1500
+                }
+                i.Open()
+                If i.ReadLine() = "Ada" Then
+                    output.Add(dev)
+                End If
+                i.Close()
+            Catch ex As Exception
+            End Try
+        Next
+        Return output
+    End Function
+#End Region
+
+    ''' <summary>
+    ''' Tries to send data to Adalight device
+    ''' </summary>
+    ''' <returns>Boolean value</returns>
     Public Function Send() As Boolean
         Try
             WriteHeader()
@@ -113,16 +176,4 @@ Public Class Adalight : Implements IDisposable
         GC.SuppressFinalize(Me)
     End Sub
 #End Region
-
-    Public Function Debug() As String
-        Dim output As String = Nothing
-        For Each dev In System.IO.Ports.SerialPort.GetPortNames()
-            Dim i As SerialPort = New SerialPort
-            i.PortName = dev
-            i.Open()
-            output = i.ReadLine
-            i.Close()
-        Next
-        Return output
-    End Function
 End Class
